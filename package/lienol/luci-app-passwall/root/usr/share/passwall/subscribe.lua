@@ -9,8 +9,6 @@ require 'luci.util'
 require 'luci.jsonc'
 require 'luci.sys'
 
-local params = arg[1]
-
 -- these global functions are accessed all the time by the event handler
 -- so caching them is worth the effort
 local luci = luci
@@ -24,9 +22,21 @@ local name = 'passwall'
 local uciType = 'nodes'
 local ucic = luci.model.uci.cursor()
 local api = require "luci.model.cbi.passwall.api.api"
+local arg2 = arg[2]
 
 local log = function(...)
-	print(os.date("%Y-%m-%d %H:%M:%S: ") .. table.concat({ ... }, " "))
+	if arg2 then
+		local result = os.date("%Y-%m-%d %H:%M:%S: ") .. table.concat({ ... }, " ")
+		if arg2 == "log" then
+			local f,err = io.open("/var/log/passwall.log","a")
+			if f and err == nil then
+				f:write(result.."\n")
+				f:close()
+			end
+		elseif arg2 == "print" then
+			print(result)
+		end
+	end
 end
 
 -- 分割字符串
@@ -34,7 +44,7 @@ local function split(full, sep)
 	full = full:gsub("%z", "")  -- 这里不是很清楚 有时候结尾带个\0
 	local off, result = 1, {}
 	while true do
-		local nEnd = full:find(sep, off)
+		local nStart, nEnd = full:find(sep, off)
 		if not nEnd then
 			local res = ssub(full, off, slen(full))
 			if #res > 0 then -- 过滤掉 \0
@@ -42,8 +52,8 @@ local function split(full, sep)
 			end
 			break
 		else
-			tinsert(result, ssub(full, off, nEnd - 1))
-			off = nEnd + slen(sep)
+			tinsert(result, ssub(full, off, nStart - 1))
+			off = nEnd + 1
 		end
 	end
 	return result
@@ -103,7 +113,7 @@ local function processData(szType, content, add_mode)
 		is_sub = (add_mode and add_mode == "导入") and 0 or 1
 	}
 	if szType == 'ssr' then
-		local dat = split(content, "/\\?")
+		local dat = split(content, "/%?")
 		local hostInfo = split(dat[1], ':')
 		result.type = "SSR"
 		result.address = hostInfo[1]
@@ -117,7 +127,7 @@ local function processData(szType, content, add_mode)
 			local t = split(v, '=')
 			params[t[1]] = t[2]
 		end
-		result.obfs_param = base64Decode(params.bfsparam)
+		result.obfs_param = base64Decode(params.obfsparam)
 		result.protocol_param = base64Decode(params.protoparam)
 		local group = base64Decode(params.group)
 		if group then
@@ -129,12 +139,13 @@ local function processData(szType, content, add_mode)
 		result.type = 'V2ray'
 		result.address = info.add
 		result.port = info.port
+		result.v2ray_protocol = 'vmess'
 		result.v2ray_transport = info.net
 		result.v2ray_VMess_alterId = info.aid
 		result.v2ray_VMess_id = info.id
 		result.remarks = info.ps
-		result.v2ray_mux = 1
-		result.v2ray_mux_concurrency = 8
+		-- result.v2ray_mux = 1
+		-- result.v2ray_mux_concurrency = 8
 		if info.net == 'ws' then
 			result.v2ray_ws_host = info.host
 			result.v2ray_ws_path = info.path
@@ -168,6 +179,7 @@ local function processData(szType, content, add_mode)
 		if info.tls == "tls" or info.tls == "1" then
 			result.v2ray_stream_security = "tls"
 			result.tls_serverName = info.host
+			result.tls_allowInsecure = 1
 		else
 			result.v2ray_stream_security = "none"
 		end
@@ -187,22 +199,22 @@ local function processData(szType, content, add_mode)
 		result.remarks = UrlDecode(alias)
 		result.type = "SS"
 		result.address = host[1]
-		if host[2]:find("/\\?") then
-			local query = split(host[2], "/\\?")
+		if host[2]:find("/%?") then
+			local query = split(host[2], "/%?")
 			result.port = query[1]
 			local params = {}
 			for _, v in pairs(split(query[2], '&')) do
 				local t = split(v, '=')
 				params[t[1]] = t[2]
 			end
-			if params.lugin then
-				local plugin_info = UrlDecode(params.lugin)
+			if params.plugin then
+				local plugin_info = UrlDecode(params.plugin)
 				local idx_pn = plugin_info:find(";")
 				if idx_pn then
-						result.ss_plugin = plugin_info:sub(1, idx_pn - 1)
-						result.ss_plugin_opts = plugin_info:sub(idx_pn + 1, #plugin_info)
+					result.ss_plugin = plugin_info:sub(1, idx_pn - 1)
+					result.ss_plugin_opts = plugin_info:sub(idx_pn + 1, #plugin_info)
 				else
-						result.ss_plugin = plugin_info
+					result.ss_plugin = plugin_info
 				end
 			end
 		else
@@ -304,14 +316,8 @@ local function update_node(manual)
 					setmetatable(nodeResult[old.grouphashkey][old.hashkey], { __index =  { _ignore = true } })
 				end
 			elseif manual == 1 and (old.add_mode and old.add_mode == "导入") then
-				if not nodeResult[old.grouphashkey] or not nodeResult[old.grouphashkey][old.hashkey] then
+				if nodeResult[old.grouphashkey] and nodeResult[old.grouphashkey][old.hashkey] then
 					ucic:delete(name, old['.name'])
-					del = del + 1
-				else
-					local dat = nodeResult[old.grouphashkey][old.hashkey]
-					ucic:tset(name, old['.name'], dat)
-					-- 标记一下
-					setmetatable(nodeResult[old.grouphashkey][old.hashkey], { __index =  { _ignore = true } })
 				end
 			end
 		else
@@ -328,6 +334,7 @@ local function update_node(manual)
 
 		end
 	end
+	log('新增节点数量: ' ..add, '删除节点数量: ' .. del)
 	ucic:commit(name)
 	-- 如果节点已经不见了把帮换一个
 	local globalServer = ucic:get_first(name, 'global', 'tcp_node1', '')
@@ -340,10 +347,9 @@ local function update_node(manual)
 		end
 		luci.sys.call("/etc/init.d/" .. name .. " restart > /dev/null 2>&1 &") -- 不加&的话日志会出现的更早
 	end
-	log('新增节点数量: ' ..add, '删除节点数量: ' .. del)
 end
 
-local function parse_link(raw, md5_str, manual)
+local function parse_link(raw, remark, md5_str, manual)
 	if raw and #raw > 0 then
 		local add_mode
 		local nodes, szType
@@ -376,6 +382,7 @@ local function parse_link(raw, md5_str, manual)
 				add_mode = '导入'
 			else
 				nodes = split(base64Decode(raw):gsub(" ", "\n"), "\n")
+				add_mode = remark
 			end
 		end
 
@@ -429,7 +436,7 @@ local execute = function()
 				local url = obj.url
 				local md5_str = md5(url)
 				local raw = wget(url)
-				parse_link(raw, md5_str)
+				parse_link(raw, remark, md5_str)
 			end
 		end)
 	end
@@ -458,7 +465,7 @@ if arg[1] then
 		local nodes = split(content:gsub(" ", "\n"), "\n")
 		for _, raw in ipairs(nodes) do
 			local md5_str = md5(raw)
-			parse_link(raw, md5_str, 1)
+			parse_link(raw, nil, md5_str, 1)
 		end
 		update_node(1)
 	elseif arg[1] == "truncate" then
