@@ -67,10 +67,10 @@ diff --git a/net/ipv4/tcp_bbr.c b/net/ipv4/tcp_bbr.c
  /* Return rate in bytes per second, optionally with a gain.
 @@ -206,2 +233,6 @@
   */
-+static bool tcp_needs_internal_pacing(const struct sock *sk)
-+{
-+	return smp_load_acquire(&sk->sk_pacing_status) == SK_PACING_NEEDED;
-+}
++
++
++
++
  static u64 bbr_rate_bytes_per_sec(struct sock *sk, u64 rate, int gain)
 @@ -307,2 +338,4 @@
  		bbr->idle_restart = 1;
@@ -333,12 +333,3 @@ diff --git a/net/ipv4/tcp_bbr.c b/net/ipv4/tcp_bbr.c
 +	bbr->extra_acked[1] = 0;
 +
  	cmpxchg(&sk->sk_pacing_status, SK_PACING_NONE, SK_PACING_NEEDED);
-
-diff --git a/include/net/tcp.h b/include/net/tcp.h
---- a/include/net/tcp.h
-+++ b/include/net/tcp.h
-@@ -1000,2 +1000,3 @@
- 	bool is_retrans;	/* is sample from retransmission? */
-+	bool is_ack_delayed;    /* is this (likely) a delayed ACK? */
- };
- 
