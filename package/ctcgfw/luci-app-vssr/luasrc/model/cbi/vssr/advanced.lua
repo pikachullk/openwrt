@@ -1,41 +1,17 @@
 local vssr = "vssr"
 local uci = luci.model.uci.cursor()
 local server_table = {}
-
-local gfwmode=0
-local gfw_count=0
-local ip_count=0
-
-if nixio.fs.access("/etc/dnsmasq.ssr/gfw_list.conf") then
-gfwmode=1		
-end
-
-local sys = require "luci.sys"
-
-if gfwmode==1 then 
- gfw_count = tonumber(sys.exec("cat /etc/dnsmasq.ssr/gfw_list.conf | wc -l"))/2
-
-end
- 
-if nixio.fs.access("/etc/china_ssr.txt") then 
- ip_count = sys.exec("cat /etc/china_ssr.txt | wc -l")
-end
-
 uci:foreach(vssr, "servers", function(s)
-	if s["type"] == "v2ray" then
-		if s.alias then
-			server_table[s[".name"]] = "[%s]:%s" %{string.upper(s.type), s.alias}
-		elseif s.server and s.server_port then
-			server_table[s[".name"]] = "[%s]:%s:%s" %{string.upper(s.type), s.server, s.server_port}
-		end
+	if s.alias then
+		server_table[s[".name"]] = "[%s]:%s" %{string.upper(s.type), s.alias}
+	elseif s.server and s.server_port then
+		server_table[s[".name"]] = "[%s]:%s:%s" %{string.upper(s.type), s.server, s.server_port}
 	end
 end)
 
 local key_table = {}   
-for key,_ in pairs(server_table) do 
-	
-	table.insert(key_table,key)  
-	
+for key,_ in pairs(server_table) do  
+    table.insert(key_table,key)  
 end 
 
 table.sort(key_table)
@@ -134,5 +110,6 @@ o.default = "root"
 
 end
 return m
+
 
 
