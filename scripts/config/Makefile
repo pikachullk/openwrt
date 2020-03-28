@@ -5,7 +5,7 @@
 .PHONY: clean all
 all: conf mconf
 clean:
-	rm -f *.o lxdialog/*.o *.moc $(clean-files) conf mconf qconf
+	rm -f *.o lxdialog/*.o *.moc $(clean-files) conf mconf nconf qconf
 
 # This clean-files definition is here to ensure that temporary files from the
 # previous version are removed by make config-clean.
@@ -63,6 +63,16 @@ $(foreach f, mconf.o $(lxdialog), \
   $(eval HOSTCFLAGS_$f = $$(shell . $(obj)/mconf-cfg && echo $$$$cflags)))
 
 $(addprefix $(obj)/, mconf.o $(lxdialog)): $(obj)/mconf-cfg
+
+# nconf: Used for the nconfig target based on ncurses
+hostprogs-y	+= nconf
+nconf-objs	:= nconf.o nconf.gui.o $(common-objs)
+
+HOSTLDLIBS_nconf	= $(shell . $(obj)/nconf-cfg && echo $$libs)
+HOSTCFLAGS_nconf.o	= $(shell . $(obj)/nconf-cfg && echo $$cflags)
+HOSTCFLAGS_nconf.gui.o	= $(shell . $(obj)/nconf-cfg && echo $$cflags)
+
+$(obj)/nconf.o $(obj)/nconf.gui.o: $(obj)/nconf-cfg
 
 # qconf: Used for the xconfig target based on Qt
 hostprogs-y	+= qconf
@@ -122,6 +132,9 @@ conf: $(conf-objs)
 # '/bin/sh: ./mconf-cfg: No such file or directory'
 mconf: mconf-cfg $(mconf-objs)
 	$(CC) -o $@ $(filter-out mconf-cfg,$^) $(HOSTLDLIBS_mconf)
+
+nconf: nconf-cfg $(nconf-objs)
+	$(CC) -o $@ $(filter-out nconf-cfg,$^) $(HOSTLDLIBS_nconf)
 
 qconf: qconf-cfg $(qconf-cxxobjs) $(qconf-objs)
 	$(CXX) -o $@ $(filter-out qconf-cfg,$^) $(HOSTLDLIBS_qconf)
